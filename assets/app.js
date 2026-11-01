@@ -52,6 +52,7 @@
     focus: 0,
     pendingIndex: -1,
     current: null,
+    streamUrl: '',
     hls: null,
     engine: 'nessuno',
     actionFocus: 0,
@@ -105,6 +106,78 @@
   window.addEventListener('online', refreshNetworkChip, false);
   window.addEventListener('offline', refreshNetworkChip, false);
 
+  /* ---------------------------------------------------------- risoluzione flussi */
+
+  function proxyUrl() {
+    var cfg = window.APP_CONFIG;
+    if (!cfg || typeof cfg.raiProxy !== 'string') return '';
+    return cfg.raiProxy;
+  }
+
+  function channelIsLive(ch) {
+    if (!ch) return false;
+    if (ch.mode === 'hls') return true;
+    if (ch.mode === 'resolve') return proxyUrl() !== '';
+    return false;
+  }
+
+  /* Legge il relinker RAI tramite proxy e ne estrae l'URL firmato.
+     XHR invece di fetch: stesso risultato anche sui motori datati. */
+  function resolveStream(target, done) {
+    var proxy = proxyUrl();
+    if (!proxy) {
+      done(null, 'proxy-assente');
+      return;
+    }
+
+    var finished = false;
+    function finish(value, reason) {
+      if (finished) return;
+      finished = true;
+      done(value, reason);
+    }
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', proxy + encodeURIComponent(target), true);
+    xhr.timeout = 12000;
+    xhr.onload = function () {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        finish(null, 'http-' + xhr.status);
+        return;
+      }
+      var text = xhr.responseText || '';
+      var match = text.match(/CDATA\[\s*(https?:\/\/[^\]\s]+\.m3u8[^\]\s]*)\s*\]/);
+      if (!match) match = text.match(/https?:\/\/[^\]<>\s]+\.m3u8[^\]<>\s]*/);
+      if (!match) {
+        finish(null, 'formato-risposta');
+        return;
+      }
+      finish(match[1] || match[0], null);
+    };
+    xhr.onerror = function () { finish(null, 'rete'); };
+    xhr.ontimeout = function () { finish(null, 'timeout'); };
+    xhr.send(null);
+  }
+
+  function showResolveHelp(ch, reason) {
+    var text;
+    if (proxyUrl() === '') {
+      text = 'Il flusso Rai arriva dal relinker ufficiale, che il browser puo\' leggere solo dal dominio raiplay.it. Senza il proxy configurato il canale non puo\' partire qui: nel frattempo puoi aprirlo su RaiPlay.';
+    } else {
+      text = 'Il servizio di risoluzione non ha restituito un flusso valido (' + reason + '). Controlla che il proxy sia attivo e riprova.';
+    }
+    showState({
+      spinner: false,
+      title: ch.name + ': serve un passaggio in piu\'',
+      text: text,
+      extra: 'motore: ' + app.engine,
+      actions: [
+        { label: 'Apri RaiPlay', primary: true, run: function () { window.location.href = ch.url; } },
+        { label: 'Torna ai canali', run: closePlayer }
+      ]
+    });
+  }
+
   /* ---------------------------------------------------------- griglia canali */
 
   function buildGrid() {
@@ -121,7 +194,7 @@
         top.appendChild(make('div', 'tile-lcn', ch.lcn));
 
         var badge = make('div', 'tile-badge');
-        if (ch.mode === 'hls') {
+        if (channelIsLive(ch)) {
           badge.appendChild(make('b'));
           badge.appendChild(document.createTextNode('LIVE'));
         } else {
@@ -309,7 +382,7 @@
     dom.osd.style.setProperty('--accent', accent);
     dom.osdLcn.textContent = app.current.lcn;
     dom.osdName.textContent = app.current.name;
-    dom.osdSub.textContent = app.current.mode === 'hls' ? 'in diretta' : 'player ufficiale';
+    dom.osdSub.textContent = channelIsLive(app.current) ? 'in diretta' : 'player ufficiale';
     dom.osd.className = 'osd is-visible';
     dom.hints.className = 'player-hints is-visible';
 
@@ -389,7 +462,7 @@
       text: reason + ' Il flusso puo\' essere momentaneamente interrotto o non raggiungibile dalla tua rete.',
       extra: 'motore: ' + app.engine,
       actions: [
-        { label: 'Riprova', primary: true, run: function () { if (app.current) startPlayback(app.current); } },
+        { label: 'Riprova', primary: true, run: function () { if (app.current) startPlayback(app.current, app.streamUrl); } },
         { label: 'Torna ai canali', run: closePlayer }
       ]
     });
@@ -451,7 +524,9 @@
     armWatchdog();
   }
 
-  function startPlayback(ch) {
+  function startPlayback(ch, url) {
+    var target = url || app.streamUrl || ch.url;
+    app.streamUrl = target;
     destroyPlayer();
     app.triedNative = false;
     onScreen('player');
@@ -466,11 +541,11 @@
 
     loadScriptSequence(HLS_SOURCES.slice(0), function (lib) {
       if (lib) {
-        attachHls(lib, ch.url);
+        attachHls(lib, target);
         return;
       }
       if (nativeOk) {
-        attachNative(ch.url);
+        attachNative(target);
         return;
       }
       showState({
@@ -488,10 +563,28 @@
 
   function openChannel(ch) {
     app.current = ch;
+    app.streamUrl = '';
     destroyPlayer();
     app.triedNative = false;
     onScreen('player');
     osdShow();
+
+    if (ch.mode === 'resolve') {
+      showState({
+        title: 'Connessione a ' + ch.name + '\u2026',
+        text: 'Chiedo il flusso al broadcaster.',
+        spinner: true
+      });
+      resolveStream(ch.streamUrl, function (url, reason) {
+        if (!url) {
+          showResolveHelp(ch, reason);
+          return;
+        }
+        app.streamUrl = url;
+        startPlayback(ch, url);
+      });
+      return;
+    }
 
     if (ch.mode === 'link') {
       showState({

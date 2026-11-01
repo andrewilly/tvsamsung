@@ -1,0 +1,7 @@
+name = "relinker-rai"
+main = "index.mjs"
+compatibility_date = "2025-01-01"
+
+# Nessuna variabile, nessun binding: il Worker legge solo il relinker Rai.
+# Per limitare le chiamate a un solo televisore, puo' essere utile aggiungere
+# in futuro un controllo sull'header Origin o un token condiviso.
