@@ -19,7 +19,7 @@ Ogni riquadro mostra numero, nome del canale e rete. Il canale si apre in uno di
   del broadcaster. Nessuna protezione viene aggirata.
 
 ```js
-window.APP_CONFIG = { raiProxy: "" };   // vuoto = risoluzione RAI disattivata
+window.APP_CONFIG = { raiProxies: ["/__relinker?url="] };
 
 { lcn: 5, name: "Canale 5", network: "mediaset", mode: "hls", url: "https://...m3u8" }
 { lcn: 1, name: "Rai 1",    network: "rai",      mode: "resolve",
@@ -53,16 +53,43 @@ Verifica della catena di risoluzione RAI eseguita il 2026-11-01: proxy -> XML
 caricati. Il Worker e' coperto da 8 test automatici (`PASS` su destinazione
 consentita, rifiuto delle altre, preflight, CORS, XML, estrazione URL).
 
-## Attivare i canali RAI (5 minuti, gratis)
+## Attivare i canali RAI
+
+I canali RAI hanno bisogno di un proxy che legga il relinker: senza, restano su
+`WEB` e mostrano il pulsante "Apri RaiPlay". Due modi.
+
+### Subito, senza account (richiede il Mac acceso)
+
+```bash
+python3 proxy/serve.py
+```
+
+Il server serve l'app **e** espone `/__relinker`. All'avvio stampa l'indirizzo da
+aprire sul televisore, del tipo `http://192.168.1.20:8080/`.
+
+Nota: in questa modalita' devi aprire l'app da quell'indirizzo, non da GitHub Pages.
+Una pagina HTTPS non puo' chiamare un proxy HTTP in rete locale: il browser
+bloccherebbe la richiesta per mixed content.
+
+Il badge delle tile RAI passa a `LIVE` solo quando la sonda `/__ready` conferma che
+il proxy locale risponde, quindi non promette nulla che non funzioni.
+
+### Permanente, indipendente dal Mac (Cloudflare, gratis)
 
 1. Deploya il Worker descritto in [`worker/README.md`](worker/README.md).
-2. Incolla il suo indirizzo in `data/channels.js`:
+2. Aggiungilo **in testa** alla lista dei proxy in `data/channels.js`:
 
    ```js
-   window.APP_CONFIG = { raiProxy: "https://relinker-rai.tuonome.workers.dev/?url=" };
+   window.APP_CONFIG = {
+     raiProxies: [
+       "https://relinker-rai.tuonome.workers.dev/?url=",
+       "/__relinker?url="
+     ]
+   };
    ```
 
-3. Commit. Le tile RAI passano da `WEB` a `LIVE`.
+L'app prova i proxy in ordine: il primo che risponde vince. Cosi' GitHub Pages usa
+il Worker e l'eventuale server locale continua a funzionare.
 
 ## Uso sul televisore
 

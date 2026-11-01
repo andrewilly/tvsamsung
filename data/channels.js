@@ -1,17 +1,19 @@
 /*
  * Configurazione dell'app.
  *
- * raiProxy: indirizzo del servizio che legge il relinker RAI.
+ * raiProxy / raiProxies: indirizzi dei servizi che leggono il relinker RAI.
  * Il relinker ufficiale (mediapolis.rai.it) espone gli URL firmati solo
  * all'origine www.raiplay.it: un browser su un altro dominio non puo' leggerli.
- * Con questo proxy i canali RAI vengono riprodotti dentro l'app invece di
- * rimandare al sito ufficiale. Vedi worker/README.md per attivarlo.
+ * L'app prova i proxy in ordine, il primo che risponde vince.
  *
- * Va lasciato vuoto per disattivare la risoluzione: in quel caso i canali RAI
- * mostrano il pulsante "Apri RaiPlay".
+ *   "/__relinker?url="  -> funziona quando l'app e' servita da proxy/serve.py
+ *   "https://<worker>.workers.dev/?url=" -> funziona sempre, vedi worker/README.md
+ *
+ * Con almeno un proxy configurato i canali RAI mostrano LIVE e si riproducono
+ * dentro l'app; senza, mostrano il pulsante "Apri RaiPlay".
  */
 window.APP_CONFIG = {
-  raiProxy: ""
+  raiProxies: ["/__relinker?url="]
 };
 
 /*

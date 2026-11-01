@@ -63,6 +63,7 @@
     navTimer: null,
     numBuffer: '',
     numTimer: null,
+    localReady: false,
     triedNative: false
   };
 
@@ -108,38 +109,110 @@
 
   /* ---------------------------------------------------------- risoluzione flussi */
 
-  function proxyUrl() {
+  function proxyList() {
     var cfg = window.APP_CONFIG;
-    if (!cfg || typeof cfg.raiProxy !== 'string') return '';
-    return cfg.raiProxy;
+    var list = [];
+    if (!cfg) return list;
+    if (typeof cfg.raiProxy === 'string' && cfg.raiProxy) list.push(cfg.raiProxy);
+    var extra = cfg.raiProxies;
+    if (extra && typeof extra.length === 'number') {
+      for (var i = 0; i < extra.length; i++) {
+        var candidate = extra[i];
+        if (typeof candidate === 'string' && candidate && list.indexOf(candidate) < 0) {
+          list.push(candidate);
+        }
+      }
+    }
+    return list;
   }
 
   function channelIsLive(ch) {
     if (!ch) return false;
     if (ch.mode === 'hls') return true;
-    if (ch.mode === 'resolve') return proxyUrl() !== '';
+    if (ch.mode === 'resolve') return hasRemoteProxy() || app.localReady === true;
     return false;
   }
 
+  function hasRemoteProxy() {
+    var list = proxyList();
+    for (var i = 0; i < list.length; i++) {
+      if (/^https?:\/\//.test(list[i])) return true;
+    }
+    return false;
+  }
+
+  /* Un proxy relativo esiste solo se l'app e' servita da proxy/serve.py.
+     Lo si verifica con una sonda leggera, senza chiamare la Rai a ogni avvio. */
+  function probeLocalProxy() {
+    var list = proxyList();
+    var hasRelative = false;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].charAt(0) === '/') hasRelative = true;
+    }
+    if (!hasRelative) return;
+
+    var xhr = new XMLHttpRequest();
+    try {
+      xhr.open('GET', '/__ready', true);
+    } catch (err) {
+      return;
+    }
+    xhr.timeout = 4000;
+    xhr.onload = function () {
+      if (xhr.status < 200 || xhr.status >= 300) return;
+      app.localReady = true;
+      refreshBadges();
+    };
+    xhr.onerror = function () { };
+    xhr.ontimeout = function () { };
+    xhr.send(null);
+  }
+
   /* Legge il relinker RAI tramite proxy e ne estrae l'URL firmato.
+     Prova i proxy in ordine: il primo che risponde vince.
      XHR invece di fetch: stesso risultato anche sui motori datati. */
   function resolveStream(target, done) {
-    var proxy = proxyUrl();
-    if (!proxy) {
+    var proxies = proxyList();
+    if (!proxies.length) {
       done(null, 'proxy-assente');
       return;
     }
 
+    var index = 0;
+    function next() {
+      if (index >= proxies.length) {
+        done(null, 'nessun proxy utilizzabile');
+        return;
+      }
+      var proxy = proxies[index];
+      index += 1;
+      requestResolvedUrl(proxy + encodeURIComponent(target), function (url, reason) {
+        if (url) {
+          done(url, null);
+          return;
+        }
+        next();
+      });
+    }
+    next();
+  }
+
+  function requestResolvedUrl(url, cb) {
     var finished = false;
     function finish(value, reason) {
       if (finished) return;
       finished = true;
-      done(value, reason);
+      cb(value, reason);
     }
 
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', proxy + encodeURIComponent(target), true);
-    xhr.timeout = 12000;
+    try {
+      xhr.open('GET', url, true);
+    } catch (err) {
+      finish(null, 'indirizzo proxy non valido');
+      return;
+    }
+    xhr.timeout = 10000;
     xhr.onload = function () {
       if (xhr.status < 200 || xhr.status >= 300) {
         finish(null, 'http-' + xhr.status);
@@ -161,8 +234,8 @@
 
   function showResolveHelp(ch, reason) {
     var text;
-    if (proxyUrl() === '') {
-      text = 'Il flusso Rai arriva dal relinker ufficiale, che il browser puo\' leggere solo dal dominio raiplay.it. Senza il proxy configurato il canale non puo\' partire qui: nel frattempo puoi aprirlo su RaiPlay.';
+    if (proxyList().length === 0) {
+      text = 'Il flusso Rai arriva dal relinker ufficiale, che il browser puo\' leggere solo dal dominio raiplay.it. Senza un proxy il canale non puo\' partire qui: nel frattempo puoi aprirlo su RaiPlay.';
     } else {
       text = 'Il servizio di risoluzione non ha restituito un flusso valido (' + reason + '). Controlla che il proxy sia attivo e riprova.';
     }
@@ -194,12 +267,6 @@
         top.appendChild(make('div', 'tile-lcn', ch.lcn));
 
         var badge = make('div', 'tile-badge');
-        if (channelIsLive(ch)) {
-          badge.appendChild(make('b'));
-          badge.appendChild(document.createTextNode('LIVE'));
-        } else {
-          badge.appendChild(document.createTextNode('WEB'));
-        }
         top.appendChild(badge);
 
         var body = make('div', 'tile-body');
@@ -217,11 +284,30 @@
 
         dom.grid.appendChild(tile);
         tiles.push(tile);
+        renderBadge(tile, ch);
       })(i);
     }
 
     app.focus = 0;
     refreshTileFocus();
+  }
+
+  function renderBadge(tile, ch) {
+    var badge = tile.querySelector('.tile-badge');
+    if (!badge) return;
+    clear(badge);
+    if (channelIsLive(ch)) {
+      badge.appendChild(make('b'));
+      badge.appendChild(document.createTextNode('LIVE'));
+    } else {
+      badge.appendChild(document.createTextNode('WEB'));
+    }
+  }
+
+  function refreshBadges() {
+    for (var i = 0; i < tiles.length; i++) {
+      renderBadge(tiles[i], CHANNELS[i]);
+    }
   }
 
   function refreshTileFocus() {
@@ -710,6 +796,7 @@
   /* ---------------------------------------------------------- avvio */
 
   buildGrid();
+  probeLocalProxy();
   tickClock();
   setInterval(tickClock, 1000);
   refreshNetworkChip();
