@@ -76,8 +76,9 @@ il proxy locale risponde, quindi non promette nulla che non funzioni.
 
 ### Permanente, indipendente dal Mac (Cloudflare, gratis)
 
-1. Deploya il Worker descritto in [`worker/README.md`](worker/README.md).
-2. Aggiungilo **in testa** alla lista dei proxy in `data/channels.js`:
+Il Worker e' **gia' deployato** su `relinker-rai.andrewilly.workers.dev` ed e' quello
+che l'app usa per primo. Per averne uno tuo, vedi [`worker/README.md`](worker/README.md),
+poi mettilo in testa alla lista in `data/channels.js`:
 
    ```js
    window.APP_CONFIG = {
@@ -87,6 +88,10 @@ il proxy locale risponde, quindi non promette nulla che non funzioni.
      ]
    };
    ```
+
+   Nota: dopo ogni modifica ad `assets/` conviene incrementare `?v=` nei tag
+   `<script>` di `index.html`, perche' GitHub Pages mette in cache i file per
+   10 minuti e il browser del televisore non ha un "ricarica forzata".
 
 L'app prova i proxy in ordine: il primo che risponde vince. Cosi' GitHub Pages usa
 il Worker e l'eventuale server locale continua a funzionare.

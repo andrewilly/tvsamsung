@@ -13,7 +13,10 @@
  * dentro l'app; senza, mostrano il pulsante "Apri RaiPlay".
  */
 window.APP_CONFIG = {
-  raiProxies: ["/__relinker?url="]
+  raiProxies: [
+    "https://relinker-rai.andrewilly.workers.dev/?url=",
+    "/__relinker?url="
+  ]
 };
 
 /*
