@@ -233,21 +233,31 @@
   }
 
   function showResolveHelp(ch, reason) {
+    var usable = hasRemoteProxy() || app.localReady === true;
     var text;
-    if (proxyList().length === 0) {
-      text = 'Il flusso Rai arriva dal relinker ufficiale, che il browser puo\' leggere solo dal dominio raiplay.it. Senza un proxy il canale non puo\' partire qui: nel frattempo puoi aprirlo su RaiPlay.';
+    var actions;
+
+    if (!usable) {
+      text = 'Il flusso Rai e\' firmato e una pagina web puo\' leggerlo solo passando da un proxy. Per vederlo qui: avvia "Avvia DTV Stream.command" sul computer e apri l\'app dall\'indirizzo che compare, oppure configura il Worker (vedi README).';
+      actions = [
+        { label: 'Riprova', primary: true, run: function () { openChannel(ch); } },
+        { label: 'Torna ai canali', run: closePlayer }
+      ];
     } else {
-      text = 'Il servizio di risoluzione non ha restituito un flusso valido (' + reason + '). Controlla che il proxy sia attivo e riprova.';
+      text = 'Il proxy non ha restituito un flusso valido (' + reason + '). Controlla che sia attivo e riprova.';
+      actions = [
+        { label: 'Riprova', primary: true, run: function () { openChannel(ch); } },
+        { label: 'Apri RaiPlay', run: function () { window.location.href = ch.url; } },
+        { label: 'Torna ai canali', run: closePlayer }
+      ];
     }
+
     showState({
       spinner: false,
-      title: ch.name + ': serve un passaggio in piu\'',
+      title: ch.name + ': serve il proxy Rai',
       text: text,
       extra: 'motore: ' + app.engine,
-      actions: [
-        { label: 'Apri RaiPlay', primary: true, run: function () { window.location.href = ch.url; } },
-        { label: 'Torna ai canali', run: closePlayer }
-      ]
+      actions: actions
     });
   }
 
